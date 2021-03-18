@@ -1,0 +1,150 @@
+version: 2.1
+description: Common scala build and publish utilities
+
+dockerhub-auth: &dockerhub-auth
+  auth:
+    username: $DOCKERHUB_USERNAME
+    password: $DOCKERHUB_PASSWORD
+
+executors:
+  sbt:
+    docker:
+      - image: circleci/openjdk:8-jdk # TODO: Our custom sbt-included image
+        <<: *dockerhub-auth
+
+commands:
+  cache_sbt_dependencies:
+    description: Cache sbt and library dependency files
+    parameters:
+      cache-name:
+        description: The name of the cache, in case different jobs want different caches
+        default: "library-dependencies"
+        type: string
+    steps:
+      - run:
+          name: Preparing cache files
+          command: |
+            rm -fv ~/.ivy2/.sbt.ivy.lock
+            find ~/.ivy2/cache -name "ivydata-*.properties" -print -delete
+            find ~/.sbt        -name "*.lock"               -print -delete
+      - save_cache:
+          key: <<parameters.cache-name>>-{{ checksum "project/build.properties"}}-{{ checksum "build.sbt" }}-{{ checksum "project/Dependencies.scala" }}-{{ checksum "project/plugins.sbt" }}-{{ checksum "build.sbt" }}
+          paths:
+            - ~/.ivy2/cache
+            - ~/.sbt
+            - ~/.cache/coursier
+  restore_sbt_dependencies:
+    description: Extract sbt dependencies from the cache
+    parameters:
+      cache-name:
+        description: The name of the cache, in case different jobs want different caches
+        default: "library-dependencies"
+        type: string
+    steps:
+      - restore_cache:
+          keys:
+            - <<parameters.cache-name>>-{{ checksum "project/build.properties"}}-{{ checksum "build.sbt" }}-{{ checksum "project/Dependencies.scala" }}-{{ checksum "project/plugins.sbt" }}-{{ checksum "build.sbt" }}
+            - <<parameters.cache-name>>-
+
+  sbt_test:
+    description: Run sbt tests with coverage
+    parameters:
+      scala-version:
+        description: What version of scala to build for, for example "2.12.12" or "2.13.3"
+        default: "2.12.12"
+        type: string
+      persist-to-workspace:
+        description: Whether or not to persist sbt dependencies and the build results to the workspace after running tests
+        default: true
+        type: boolean
+      sbt-opts:
+        description: The value to set for the `SBT_OPTS` environment variable
+        type: string
+        default: "-XX:+UseConcMarkSweepGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Duser.timezone=Etc/UTC -Duser.language=en -Duser.country=US -Djava.net.preferIPv4Stack=true -XX:+PerfDisableSharedMem"
+    steps:
+      - run:
+          name: sbt test
+          environment:
+            SBT_OPTS: << parameters.sbt-opts >>
+          command: sbt ++<< parameters.scala-version >> -Dsbt.traces=true coverage test
+      - store_test_results:
+          path: target/test-reports
+      - store_artifacts:
+          path: target/traces/build.trace
+          destination: build-<< parameters.scala-version >>.trace
+      - when:
+          condition: << parameters.persist-to-workspace >>
+          steps:
+            - persist_to_workspace:
+                root: /home/circleci
+                paths:
+                  - repo/modules/*/target/scala-*/scoverage-data
+                  - repo/modules/*/*/target/scala-*/scoverage-data
+
+jobs:
+  static-lint:
+    parameters:
+      sbt-opts:
+        description: The value to set for the `SBT_OPTS` environment variable
+        type: string
+        # Avoid "OutOfMemoryError: GC overhead limit exceeded" when checking links
+        default: "-Xmx2g"
+      executor:
+        description: The executor to use for the linting environment
+        type: executor
+        default: sbt
+      run-explicitdeps:
+        description: Whether or not to run the sbt-explicit-dependencies lint checks
+        type: boolean
+        default: true
+      run-missinglink:
+        description: Whether or not to run the sbt-missinglink lint checks
+        type: boolean
+        default: true
+      working_directory:
+        description: The working_directory to use for execution
+        type: string
+        default: ~/repo
+    executor: <<parameters.executor>>
+    working_directory: <<parameters.working_directory>>
+    steps:
+      - checkout
+      - restore_sbt_dependencies:
+          cache-name: lint
+      - when:
+          condition: <<parameters.run-explicitdeps>>
+          steps:
+            - run:
+                name: Detect use of undeclared transitive dependencies
+                command: sbt undeclaredCompileDependenciesTest
+                environment:
+                  SBT_OPTS: <<parameters.sbt-opts>>
+      - when:
+          condition: <<parameters.run-missinglink>>
+          steps:
+            - run:
+                name: Detect potential runtime linking errors
+                command: sbt missinglinkCheck
+                environment:
+                  SBT_OPTS: <<parameters.sbt-opts>>
+      - cache_sbt_dependencies:
+          cache-name: lint
+
+  run-coverage-report:
+    parameters:
+      executor:
+        description: The executor to use for the linting environment
+        type: executor
+        default: sbt
+      working_directory:
+        description: The working_directory to use for execution
+        type: string
+        default: ~/repo
+    executor: <<parameters.executor>>
+    working_directory: <<parameters.working_directory>>
+    steps:
+      - checkout
+      - attach_workspace:
+          at: /home/circleci
+      - restore_sbt_dependencies
+      - run: sbt coverageAggregate coveralls
