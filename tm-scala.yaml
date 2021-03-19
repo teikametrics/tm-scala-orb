@@ -62,9 +62,13 @@ commands:
         type: string
         default: "-XX:+UseConcMarkSweepGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Duser.timezone=Etc/UTC -Duser.language=en -Duser.country=US -Djava.net.preferIPv4Stack=true -XX:+PerfDisableSharedMem"
       persist-base-path:
-        description: The path prefix to use for persisting coverage data
+        description: The path prefix to use for persisting coverage data, relative to `persist-root-path`
         type: string
         default: "repo/modules"
+      persist-root-path:
+        description: The 'root' directory for persisting coverage data
+        type: string
+        default: /home/circleci
     steps:
       - run:
           name: sbt test
@@ -80,7 +84,7 @@ commands:
           condition: << parameters.persist-to-workspace >>
           steps:
             - persist_to_workspace:
-                root: /home/circleci
+                root: <<parameters.persist-root-path>>
                 paths:
                   - <<parameters.persist-base-path>>/*/target/scala-*/scoverage-data
                   - <<parameters.persist-base-path>>/*/*/target/scala-*/scoverage-data
