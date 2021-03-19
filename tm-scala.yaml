@@ -61,6 +61,10 @@ commands:
         description: The value to set for the `SBT_OPTS` environment variable
         type: string
         default: "-XX:+UseConcMarkSweepGC -XX:+UnlockDiagnosticVMOptions -XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap -Duser.timezone=Etc/UTC -Duser.language=en -Duser.country=US -Djava.net.preferIPv4Stack=true -XX:+PerfDisableSharedMem"
+      persist-base-path:
+        description: The path prefix to use for persisting coverage data
+        type: string
+        default: "repo/modules"
     steps:
       - run:
           name: sbt test
@@ -78,8 +82,8 @@ commands:
             - persist_to_workspace:
                 root: /home/circleci
                 paths:
-                  - repo/modules/*/target/scala-*/scoverage-data
-                  - repo/modules/*/*/target/scala-*/scoverage-data
+                  - <<parameters.persist-base-path>>/*/target/scala-*/scoverage-data
+                  - <<parameters.persist-base-path>>/*/*/target/scala-*/scoverage-data
 
 jobs:
   static-lint:
