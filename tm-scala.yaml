@@ -148,11 +148,15 @@ jobs:
         description: The working_directory to use for execution
         type: string
         default: ~/repo
+      persist-root-path:
+        description: The 'root' directory for persisting coverage data
+        type: string
+        default: /home/circleci
     executor: <<parameters.executor>>
     working_directory: <<parameters.working_directory>>
     steps:
       - checkout
       - attach_workspace:
-          at: /home/circleci
+          at: <<parameters.persist-root-path>>
       - restore_sbt_dependencies
       - run: sbt coverageAggregate coveralls
