@@ -24,6 +24,7 @@ commands:
       - run:
           name: Preparing cache files
           command: |
+            mkdir -p ~/.ivy2/cache
             rm -fv ~/.ivy2/.sbt.ivy.lock
             find ~/.ivy2/cache -name "ivydata-*.properties" -print -delete
             find ~/.sbt        -name "*.lock"               -print -delete
